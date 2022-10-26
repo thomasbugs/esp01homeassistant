@@ -1,1 +1,1 @@
-# esp01dht11mqtt
+# Integração de um ESP8266-01 com HomeAssistant
