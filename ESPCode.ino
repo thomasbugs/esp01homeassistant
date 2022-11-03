@@ -17,11 +17,11 @@
 // WIFI Casa
 const char* ssid = "Virus_cavalo_de_troia";
 const char* password = "putygrillputygrill280642";
-/*
+
 // Hotspot smartphone
-const char* ssid = "Oie";
-const char* password = "qqij8mh5shns6c5";
-*/
+const char* ssidHot = "Oie";
+const char* passwordHot = "qqij8mh5shns6c5";
+
 
 // Variáveis MQTT
 const char* mqtt_server = "broker.mqtt-dashboard.com";
@@ -66,7 +66,7 @@ float humi = 0.0;
 float temp = 0.0;
 
 // mqtt Reconnect
-void reconnect() {                                                       
+void reconnectmqtt() {                                                       
   while (!client.connected()) {                                          
     Serial.print("Aguardando conexão MQTT...");
     String clientID = "ESP-01Client-";
@@ -87,6 +87,29 @@ void reconnect() {
   }
 }
 
+// WiFi Management
+
+int connectWifi(int cred)
+{
+  WiFi.mode(WIFI_STA);
+  switch (cred)
+  {
+    case 0:
+      Serial.println(ssid);
+      WiFi.begin(ssid, password);
+      break;
+    case 1:
+      Serial.println(ssidHot);
+      WiFi.begin(ssidHot, passwordHot);
+      break;
+  }
+  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    return 0;
+    delay(1000);
+  }
+  return 1;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(50);
@@ -95,17 +118,28 @@ void setup() {
   Serial.println("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=");
   Serial.println("Iniciando...");
 
-  WiFi.mode(WIFI_STA);
-  Serial.print("Tentando conexao a rede: ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Conexao falhou! Reiniciando...");
+  int i = 0;
+  while( i < 10 ) // Tenta conectar as 2 redes descritas anteriormente 5 vezes cada
+  {
+    Serial.println("Tentando conexao a rede");
+    if(connectWifi( i % 2 ))
+    {
+      Serial.println("Conectado!");
+      Serial.println("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=");
+      break;
+    }
+    else
+    {
+      Serial.println("Conexao falhou!");
+    }
+    i++;
+  }
+  if( i >= 10 )
+  {
+    Serial.println("Falha ao tentar conexão WiFi, reiniciando ESP!");
     delay(5000);
     ESP.restart();
   }
-  Serial.println("Conectado!");
-  Serial.println("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=");
 
   // Porta padrao do ESP8266 para OTA eh 8266 - Voce pode mudar ser quiser, mas deixe indicado!
   // ArduinoOTA.setPort(8266);
@@ -123,7 +157,7 @@ void setup() {
     Serial.println("nFim!");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progresso: %u%%r", (progress / (total / 100)));
+    Serial.printf("Progresso: %u%%\r", (progress / (total / 100)));
   });
   ArduinoOTA.onError([](ota_error_t error) {
     Serial.printf("Erro [%u]: ", error);
@@ -149,8 +183,9 @@ void setup() {
  
 void loop() {
   ArduinoOTA.handle(); // NAO RETIRAR ESTA LINHA!!!
+  
   if (!client.connected()) {                                             
-    reconnect();
+    reconnectmqtt();
   }
   client.loop();
   unsigned long currentMillis = millis();
