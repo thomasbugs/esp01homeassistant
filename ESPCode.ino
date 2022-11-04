@@ -5,11 +5,13 @@
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 // tp4056
 #define GPIO0 0
 #define GPIO2 2
 
 #define DHTTYPE DHT11
+
 // Serial.println("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=");
 
 // Variáveis para acessar wi-fi
@@ -26,8 +28,8 @@ const char* password = "qqij8mh5shns6c5";
 // Variáveis MQTT
 const char* mqtt_server = "broker.mqtt-dashboard.com";
 const int mqtt_port = 1883;
-//const char* mqtt_user = ;
-//const char* mqtt_key = ;
+
+#define MQTT_SENSOR_TOPIC "trab_ubi/sensor"
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -56,6 +58,27 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length){
         client.publish("pub_test_ubi", "Tchau");
   }
   
+}
+
+// function called to publish the temperature and the humidity
+void publishData(float p_temperature, float p_humidity) {
+  StaticJsonBuffer<200> jsonBuffer;
+  JsonObject& root = jsonBuffer.createObject();
+  // INFO: the data must be converted into a string; a problem occurs when using floats...
+  root["temperature_trab_ubi"] = (String)p_temperature;
+  root["humidity_trab_ubi"] = (String)p_humidity;
+  root.prettyPrintTo(Serial);
+  Serial.println("");
+  /*
+     {
+        "temperature": "23.20" ,
+        "humidity": "43.70"
+     }
+  */
+  char data[200];
+  root.printTo(data, root.measureLength() + 1);
+  client.publish(MQTT_SENSOR_TOPIC, data, true);
+  yield();
 }
 
 // Variáveis para o sensor de temperatura
@@ -172,7 +195,8 @@ void loop() {
       Serial.print(temp);
       Serial.println("ºC");
       snprintf(msg, MSG_BUFFER_SIZE, "%.2fºC", temp);
-      client.publish("temp_pub_ubiquos",msg);
+      // client.publish("trab_ubi/sensorUbiquosTemp",msg);
+      publishData(temp, humi);
       delay(10);
     }
   
