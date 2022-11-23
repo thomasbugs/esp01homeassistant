@@ -6,24 +6,30 @@
 #include <DHT.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-// tp4056
+#include <ESP8266WebServer.h>
+
 #define GPIO0 0
 #define GPIO2 2
 
 #define DHTTYPE DHT11
 
-// Serial.println("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=");
-
 // Variáveis para acessar wi-fi
 
-// WIFI Casa
-const char* ssid = "Virus_cavalo_de_troia";
-const char* password = "putygrillputygrill280642";
+// Access Point
+const char* ssidAP = "ESP8266-DHT11-AP";
+const char* passwordAP = "dht11appasswordesp8266";
 
-// Hotspot smartphone
-const char* ssidHot = "Oie";
-const char* passwordHot = "qqij8mh5shns6c5";
+// WiFi
+String ssid;
+String password;
 
+bool wificonnect = false;
+
+IPAddress local_ip(192,168,1,1);
+IPAddress gateway(192,168,1,1);
+IPAddress subnet(255,255,255,0);
+
+ESP8266WebServer server(80);
 
 // Variáveis MQTT
 const char* mqtt_server = "broker.mqtt-dashboard.com";
@@ -39,18 +45,11 @@ char msg[MSG_BUFFER_SIZE];
 int value = 0;
 
 void mqtt_callback(char* topic, byte* payload, unsigned int length){
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
   String topicString = topic;
   String msgcallback = "";
   for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
     msgcallback += (char)payload[i];
   }
-  Serial.println();
-  Serial.print("Mensagem: ");
-  Serial.println(msgcallback);
   if(topicString.equals("sub_test_ubi")){
       if(msgcallback.equals("1"))
         client.publish("pub_test_ubi", "Oie");
@@ -64,17 +63,8 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length){
 void publishData(float p_temperature, float p_humidity) {
   StaticJsonBuffer<200> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
-  // INFO: the data must be converted into a string; a problem occurs when using floats...
   root["temperature_trab_ubi"] = (String)p_temperature;
   root["humidity_trab_ubi"] = (String)p_humidity;
-  root.prettyPrintTo(Serial);
-  Serial.println("");
-  /*
-     {
-        "temperature": "23.20" ,
-        "humidity": "43.70"
-     }
-  */
   char data[200];
   root.printTo(data, root.measureLength() + 1);
   client.publish(MQTT_SENSOR_TOPIC, data, true);
@@ -90,21 +80,13 @@ float temp = 0.0;
 
 // mqtt Reconnect
 void reconnectmqtt() {                                                       
-  while (!client.connected()) {                                          
-    Serial.print("Aguardando conexão MQTT...");
+  while (!client.connected()) {                  
     String clientID = "ESP-01Client-";
     clientID += String(random(0xffff, HEX));
-    if (client.connect(clientID.c_str())) {                               
-      Serial.println("conectado");
-      Serial.print("Client ID: ");
-      Serial.println(clientID);
-      Serial.println("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=");                                       
+    if (client.connect(clientID.c_str())) {                                      
       client.publish("pub_test_ubi", "Connected");    
       client.subscribe("sub_test_ubi");                         
-    } else {                                                             
-      Serial.print("falhou, rc=");                                       
-      Serial.print(client.state());                                      
-      Serial.println(" tente novamente em 5s");                          
+    } else {                                
       delay(5000);                                                       
     }
   }
@@ -112,143 +94,149 @@ void reconnectmqtt() {
 
 // WiFi Management
 
-int connectWifi(int cred)
+int connectWifi()
 {
   WiFi.mode(WIFI_STA);
-  switch (cred)
-  {
-    case 0:
-      Serial.println(ssid);
-      WiFi.begin(ssid, password);
-      break;
-    case 1:
-      Serial.println(ssidHot);
-      WiFi.begin(ssidHot, passwordHot);
-      break;
-  }
+  WiFi.begin(ssid, password);
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
     return 0;
     delay(1000);
-  }
+  }  
   return 1;
 }
 
 void setup() {
-  Serial.begin(115200);
   delay(50);
   dht.begin();
   delay(2000);
-  Serial.println("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=");
-  Serial.println("Iniciando...");
 
-  int i = 0;
-  while( i < 10 ) // Tenta conectar as 2 redes descritas anteriormente 5 vezes cada
-  {
-    Serial.println("Tentando conexao a rede");
-    if(connectWifi( i % 2 ))
-    {
-      Serial.println("Conectado!");
-      Serial.println("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=");
-      break;
-    }
-    else
-    {
-      Serial.println("Conexao falhou!");
-    }
-    i++;
-  }
-  if( i >= 10 )
-  {
-    Serial.println("Falha ao tentar conexão WiFi, reiniciando ESP!");
-    delay(5000);
-    ESP.restart();
-  }
+  WiFi.softAPConfig(local_ip, gateway, subnet);
+  WiFi.softAP(ssidAP, passwordAP);
+  delay(100);
 
-  // Porta padrao do ESP8266 para OTA eh 8266 - Voce pode mudar ser quiser, mas deixe indicado!
-  // ArduinoOTA.setPort(8266);
- 
-  // O Hostname padrao eh esp8266-[ChipID], mas voce pode mudar com essa funcao
-  // ArduinoOTA.setHostname("nome_do_meu_esp8266");
- 
-  // Nenhuma senha eh pedida, mas voce pode dar mais seguranca pedindo uma senha pra gravar
-  // ArduinoOTA.setPassword((const char *)"123");
- 
-  ArduinoOTA.onStart([]() {
-    Serial.println("Inicio...");
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("nFim!");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progresso: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Erro [%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Autenticacao Falhou");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Falha no Inicio");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Falha na Conexao");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Falha na Recepcao");
-    else if (error == OTA_END_ERROR) Serial.println("Falha no Fim");
-  });
-  ArduinoOTA.begin();
-  Serial.println("Pronto");
-  Serial.print("Endereco IP: ");
-  Serial.println(WiFi.localIP());
-  
-  // FIM DAS CONFIGURACOES DO OTA
+  server.on("/", handle_OnConnect);
+  server.on("/conectar", handle_Conectar);
 
-  randomSeed(micros());
-
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(mqtt_callback);
+  server.begin();
 
 }
  
 void loop() {
   ArduinoOTA.handle(); // NAO RETIRAR ESTA LINHA!!!
+
+  if(!wificonnect){
+    server.handleClient();
+    return;
+  }
   
   if (!client.connected()) {                                             
     reconnectmqtt();
   }
   client.loop();
+
   unsigned long currentMillis = millis();
   
-//  Serial.println("Lendo temperatura...");
   if(currentMillis - previousMillis >= interval){
     previousMillis = currentMillis;
     float t = dht.readTemperature();
     float h = dht.readHumidity();
   
-    if(isnan(t)){
-//    Serial.println("Erro ao ler temperatura");
-      client.publish("temp_pub_ubiquos","ERROR!");
-    }
-    else{
-      client.publish("debug_pub_ubi","TEMP");
+    if(!isnan(t)){
       temp = t;
-      Serial.print("Temperatura: ");
-      Serial.print(temp);
-      Serial.println("ºC");
       snprintf(msg, MSG_BUFFER_SIZE, "%.2fºC", temp);
-      // client.publish("trab_ubi/sensorUbiquosTemp",msg);
       publishData(temp, humi);
       delay(10);
     }
   
-//    Serial.println("Lendo umidade...");
-    if(isnan(h)){
-//    Serial.println("Erro ao ler umidade");
-    }
-    else{
-      client.publish("debug_pub_ubi","Humi");
+    if(!isnan(h)){
       humi = h;
-      Serial.print("Umidade: ");
-      Serial.print(humi);
-      Serial.println("%");
       snprintf(msg, MSG_BUFFER_SIZE, "%.2f%%", humi);
       client.publish("humi_pub_ubiquos",msg);
       delay(10);
     }
   }
   
+}
+
+void handle_OnConnect() {
+
+  server.send(200, "text/html", HTMLWebServer());
+  
+}
+
+void handle_Conectar() {
+
+  ssid = server.arg("network");
+  password = server.arg("wifipassword");
+  delay(500);
+
+  if(connectWifi())
+  { 
+
+    wificonnect = true;
+    
+    randomSeed(micros());
+
+    client.setServer(mqtt_server, mqtt_port);
+    client.setCallback(mqtt_callback);
+
+    ArduinoOTA.begin();
+  }
+  else{
+    ESP.restart();
+  }
+  
+  
+}
+
+String HTMLWebServer() {
+
+ String htmlweb = "<!DOCTYPE html> <html>\n";
+
+ // Head
+ htmlweb += "<head>\n";
+ 
+ htmlweb += "<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
+ htmlweb += "<title>ESP8266 Temperature Sensor Configuration</title>\n";
+ 
+ htmlweb += "<style>\n";
+ htmlweb += "html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
+ htmlweb += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
+ htmlweb += ".button {display: block;background-color: #1abc9c;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 20px;margin: 35px auto 35px;cursor: pointer;border-radius: 4px;}\n";
+ htmlweb += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
+ htmlweb += "</style>\n";
+ 
+ htmlweb += "</head>\n";
+
+ // Body
+ htmlweb += "<body>\n";
+ 
+ htmlweb += "<h1>Configuração de rede ESP8266-01</h1>\n";
+
+ htmlweb += "<form action=\"/conectar\">\n";
+ 
+ htmlweb += "<p>Rede WiFi</p>\n";
+ htmlweb += "<select name=\"network\" required>\n";
+ htmlweb += "<option value=\"\" selected>Selecione</option>\n";
+ int NNetworks = WiFi.scanNetworks();
+ for(int it = 0 ; it < NNetworks ; it++)
+ {
+  htmlweb += "<option value=\"" + WiFi.SSID(it) + "\">" + WiFi.SSID(it) + "</option>";
+ }
+ htmlweb += "</select>\n";
+
+ htmlweb += "<p>Senha</p>\n";
+
+ htmlweb += "<input name=\"wifipassword\" type=\"password\" value>\n";
+
+ htmlweb += "<input class=\"button\" type=\"submit\" value=\"Conectar\">\n";
+
+ htmlweb += "</form>\n";
+ 
+ htmlweb += "</body>\n";
+
+ htmlweb += "</html>\n";
+
+ return htmlweb;
+ 
 }
