@@ -38,6 +38,8 @@ ESP8266WebServer server(80);
 const char* mqtt_server = "broker.mqtt-dashboard.com";
 const int mqtt_port = 1883;
 
+#define MQTT_SENSOR_TOPIC "trab_ubi/plug"
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 unsigned long lastmsg = 0;
@@ -52,34 +54,47 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length){
     msgcallback += (char)payload[i];
   }
   if(topicString.equals("trab_ubi/sub_plug1")){
-    if(msgcallback.equals("1")){
+    if(msgcallback.equals("ON")){
       digitalWrite(TOMADA_1, HIGH);
       P1Status = 1;
     }
-    else if(msgcallback.equals("0")){
+    else if(msgcallback.equals("OFF")){
       digitalWrite(TOMADA_1, LOW);
       P1Status = 0;
     }
     client.publish("trab_ubi/pub_plug1_status", P1Status ? "ON" : "OFF");
+    publishData();
   }
   else if(topicString.equals("trab_ubi/sub_plug2")){
-    if(msgcallback.equals("1")){
+    if(msgcallback.equals("ON")){
       digitalWrite(TOMADA_2, HIGH);
       P2Status = 1;
     }
-    else if(msgcallback.equals("0")){
+    else if(msgcallback.equals("OFF")){
       digitalWrite(TOMADA_2, LOW);
       P2Status = 0;
     }
     client.publish("trab_ubi/pub_plug2_status", P2Status ? "ON" : "OFF");
+    publishData();
   }
   
+}
+
+void publishData() {
+  StaticJsonBuffer<200> jsonBuffer;
+  JsonObject& root = jsonBuffer.createObject();
+  root["plug_trab_ubi1"] = P1Status ? "ON" : "OFF";
+  root["plug_trab_ubi2"] = P2Status ? "ON" : "OFF";
+  char data[200];
+  root.printTo(data, root.measureLength() + 1);
+  client.publish(MQTT_SENSOR_TOPIC, data, true);
+  yield();
 }
 
 // mqtt Reconnect
 void reconnectmqtt() {                                                       
   while (!client.connected()) {
-    String clientID = "ESP-01Client-";
+    String clientID = "ESP-12Client-";
     clientID += String(random(0xffff, HEX));
     if (client.connect(clientID.c_str())) {                                      
       client.publish("pub_plug_connect_ubi", "Connected");    
@@ -174,6 +189,8 @@ void handle_Conectar() {
     client.setCallback(mqtt_callback);
 
     ArduinoOTA.begin();
+
+    publishData();
   }
   else{
     ESP.restart();
